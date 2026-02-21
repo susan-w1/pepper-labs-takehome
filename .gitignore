@@ -11,3 +11,5 @@ dist-ssr/
 
 # Do NOT ignore dev.db — it is committed with seed data
 # !backend/dev.db
+backend/*.db-wal
+backend/*.db-shm
