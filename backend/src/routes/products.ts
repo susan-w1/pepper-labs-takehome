@@ -107,16 +107,119 @@ router.get("/:id", (req, res) => {
  *   ]
  * }
  */
-router.post("/", (_req, res) => {
-  // TODO: Implement product creation
-  // 1. Validate required fields (name is required, variants array must have at least one entry)
-  // 2. Validate each variant (sku required + unique, price_cents >= 0, inventory_count >= 0)
-  // 3. Insert product and variants inside a transaction
-  // 4. Return the created product with its variants
-  res.status(501).json({
-    error: "Not implemented",
-    hint: "Implement product creation with validation and a database transaction",
-  });
+router.post("/", (req, res) => {
+  try {
+    const body = req.body ?? {};
+
+    const name = typeof body.name === "string" ? body.name.trim() : "";
+    const description =
+      body.description === null || body.description === undefined
+        ? null
+        : String(body.description);
+    const status = body.status ?? "active";
+    const category_id =
+      body.category_id === null || body.category_id === undefined
+        ? null
+        : Number(body.category_id);
+
+    const variants = Array.isArray(body.variants) ? body.variants : [];
+
+    // --- Validation: product ---
+    if (!name) return res.status(400).json({ error: "Product name is required" });
+
+    if (!["active", "draft", "archived"].includes(status)) {
+      return res.status(400).json({ error: "Invalid status" });
+    }
+
+    if (variants.length < 1) {
+      return res.status(400).json({ error: "At least one variant is required" });
+    }
+
+    // --- Validation: variants ---
+    const seenSkus = new Set<string>();
+
+    for (let i = 0; i < variants.length; i++) {
+      const v = variants[i] ?? {};
+      const sku = typeof v.sku === "string" ? v.sku.trim() : "";
+      const vname = typeof v.name === "string" ? v.name.trim() : "";
+      const price_cents = Number(v.price_cents);
+      const inventory_count = Number(v.inventory_count);
+
+      if (!sku) return res.status(400).json({ error: `Variant #${i + 1}: SKU is required` });
+      const skuKey = sku.toLowerCase();
+      if (seenSkus.has(skuKey))
+        return res.status(400).json({ error: `Variant #${i + 1}: SKU must be unique` });
+      seenSkus.add(skuKey);
+
+      if (!vname)
+        return res.status(400).json({ error: `Variant #${i + 1}: Variant name is required` });
+
+      if (!Number.isFinite(price_cents) || price_cents < 0)
+        return res.status(400).json({ error: `Variant #${i + 1}: price_cents must be >= 0` });
+
+      if (!Number.isFinite(inventory_count) || inventory_count < 0)
+        return res.status(400).json({ error: `Variant #${i + 1}: inventory_count must be >= 0` });
+    }
+
+    // --- Transaction: insert product + variants ---
+    const createProductTx = db.transaction(() => {
+      const result = db
+        .prepare(
+          `INSERT INTO products (name, description, category_id, status)
+           VALUES (?, ?, ?, ?)`
+        )
+        .run(name, description, category_id, status);
+
+      const productId = Number(result.lastInsertRowid);
+
+      const insertVariant = db.prepare(
+        `INSERT INTO variants (product_id, sku, name, price_cents, inventory_count)
+         VALUES (?, ?, ?, ?, ?)`
+      );
+
+      for (const v of variants) {
+        insertVariant.run(
+          productId,
+          String(v.sku).trim(),
+          String(v.name).trim(),
+          Number(v.price_cents),
+          Number(v.inventory_count)
+        );
+      }
+
+      const product = db
+        .prepare(
+          `SELECT p.*, c.name AS category_name
+           FROM products p
+           LEFT JOIN categories c ON p.category_id = c.id
+           WHERE p.id = ?`
+        )
+        .get(productId) as Record<string, unknown> | undefined;
+
+      const createdVariants = db
+        .prepare(`SELECT * FROM variants WHERE product_id = ? ORDER BY created_at ASC`)
+        .all(productId);
+
+      return { product, variants: createdVariants };
+    });
+
+    const created = createProductTx();
+
+    if (!created.product) {
+      return res.status(500).json({ error: "Failed to create product" });
+    }
+
+    return res.status(201).json({ ...created.product, variants: created.variants });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Unknown error";
+
+    // Friendly unique SKU error (SQLite UNIQUE constraint)
+    if (message.includes("UNIQUE constraint failed") && message.includes("variants.sku")) {
+      return res.status(400).json({ error: "SKU must be unique" });
+    }
+
+    return res.status(500).json({ error: message });
+  }
 });
 
 /**
