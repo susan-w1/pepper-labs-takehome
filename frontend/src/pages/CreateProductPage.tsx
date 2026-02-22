@@ -11,6 +11,8 @@ type VariantForm = {
   inventory: string;
 };
 
+type FieldErrors = Record<string, string>;
+
 export default function CreateProductPage() {
   const navigate = useNavigate();
 
@@ -25,7 +27,7 @@ export default function CreateProductPage() {
     { sku: "", name: "", price: "0", inventory: "0" },
   ]);
 
-  // Categories (optional but nice)
+  // Categories
   const [categories, setCategories] = useState<Category[]>([]);
   const [loadingCategories, setLoadingCategories] = useState(false);
 
@@ -33,55 +35,94 @@ export default function CreateProductPage() {
   const [error, setError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
-  // Load categories (if endpoint exists)
- useEffect(() => {
-  let ignore = false;
+  // Field-level errors (new)
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
 
-  async function load() {
-    setLoadingCategories(true);
-    try {
-      const res = await fetch("http://localhost:3001/api/categories");
-      if (!res.ok) throw new Error(`Failed to load categories: ${res.status}`);
-      const data = await res.json();
-      if (!ignore) setCategories(Array.isArray(data) ? data : []);
-    } catch {
-      if (!ignore) setCategories([]);
-    } finally {
-      if (!ignore) setLoadingCategories(false);
-    }
-  }
+  // Helpers
+  const inputClass = (hasError: boolean) =>
+    [
+      "w-full rounded-md border px-3 py-2",
+      hasError ? "border-red-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500" : "",
+    ].join(" ");
 
-  load();
-  return () => {
-    ignore = true;
+  const clearFieldError = (key: string) => {
+    setFieldErrors((prev) => {
+      if (!prev[key]) return prev;
+      const copy = { ...prev };
+      delete copy[key];
+      return copy;
+    });
   };
-}, []);
 
-  // Client-side validation
-  const validationError = useMemo(() => {
-    if (!productName.trim()) return "Product name is required.";
-    if (variants.length < 1) return "At least one variant is required.";
+  // Load categories
+  useEffect(() => {
+    let ignore = false;
 
-    const seen = new Set<string>();
-    for (let i = 0; i < variants.length; i++) {
-      const v = variants[i];
-      if (!v.sku.trim()) return `Variant #${i + 1}: SKU is required.`;
-      const skuKey = v.sku.trim().toLowerCase();
-      if (seen.has(skuKey)) return `Variant #${i + 1}: SKU must be unique (duplicate SKU).`;
-      seen.add(skuKey);
-
-      if (!v.name.trim()) return `Variant #${i + 1}: Variant name is required.`;
-
-      const price = Number(v.price);
-      if (Number.isNaN(price)) return `Variant #${i + 1}: Price must be a number.`;
-      if (price < 0) return `Variant #${i + 1}: Price must be ≥ 0.`;
-
-      const inv = Number(v.inventory);
-      if (Number.isNaN(inv)) return `Variant #${i + 1}: Inventory must be a number.`;
-      if (inv < 0) return `Variant #${i + 1}: Inventory must be ≥ 0.`;
+    async function load() {
+      setLoadingCategories(true);
+      try {
+        const res = await fetch("http://localhost:3001/api/categories");
+        if (!res.ok) throw new Error(`Failed to load categories: ${res.status}`);
+        const data = await res.json();
+        if (!ignore) setCategories(Array.isArray(data) ? data : []);
+      } catch {
+        if (!ignore) setCategories([]);
+      } finally {
+        if (!ignore) setLoadingCategories(false);
+      }
     }
 
-    return null;
+    load();
+    return () => {
+      ignore = true;
+    };
+  }, []);
+
+  // Validate ALL fields (new)
+  const allFieldErrors = useMemo(() => {
+    const errs: FieldErrors = {};
+
+    if (!productName.trim()) errs.productName = "Product name is required.";
+
+    if (variants.length < 1) {
+      errs.variants = "At least one variant is required.";
+      return errs;
+    }
+
+    const seenSkus = new Set<string>();
+
+    variants.forEach((v, i) => {
+      const skuKey = `variants.${i}.sku`;
+      const nameKey = `variants.${i}.name`;
+      const priceKey = `variants.${i}.price`;
+      const invKey = `variants.${i}.inventory`;
+
+      // SKU required + unique
+      if (!v.sku.trim()) {
+        errs[skuKey] = "SKU is required.";
+      } else {
+        const normalized = v.sku.trim().toLowerCase();
+        if (seenSkus.has(normalized)) {
+          errs[skuKey] = "SKU must be unique.";
+        }
+        seenSkus.add(normalized);
+      }
+
+      // Variant name required
+      if (!v.name.trim()) errs[nameKey] = "Variant name is required.";
+
+      // Price >= 0
+      const price = Number(v.price);
+      if (Number.isNaN(price)) errs[priceKey] = "Price must be a number.";
+      else if (price < 0) errs[priceKey] = "Price must be ≥ 0.";
+
+      // Inventory >= 0
+      const inv = Number(v.inventory);
+      if (Number.isNaN(inv)) errs[invKey] = "Inventory must be a number.";
+      else if (inv < 0) errs[invKey] = "Inventory must be ≥ 0.";
+    });
+
+    return errs;
   }, [productName, variants]);
 
   function updateVariant(index: number, patch: Partial<VariantForm>) {
@@ -94,19 +135,31 @@ export default function CreateProductPage() {
 
   function removeVariant(index: number) {
     setVariants((prev) => prev.filter((_, i) => i !== index));
+    // also clear any old errors for this index to avoid “stale” errors
+    setFieldErrors((prev) => {
+      const copy: FieldErrors = {};
+      Object.entries(prev).forEach(([k, v]) => {
+        if (!k.startsWith(`variants.${index}.`)) copy[k] = v;
+      });
+      return copy;
+    });
   }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+
+    // reset top error
     setError(null);
 
-    if (validationError) {
-      setError(validationError);
+    // compute errors and show them
+    setFieldErrors(allFieldErrors);
+
+    if (Object.keys(allFieldErrors).length > 0) {
+      setError("Please fix the highlighted fields.");
       return;
     }
 
-    // Build payload to match DB schema:
-    // variants expects: sku, name, price_cents, inventory_count
+    // Build payload
     const payload = {
       name: productName.trim(),
       description: description.trim() ? description.trim() : null,
@@ -122,6 +175,7 @@ export default function CreateProductPage() {
 
     try {
       setIsSaving(true);
+
       const res = await fetch("http://localhost:3001/api/products", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -135,14 +189,9 @@ export default function CreateProductPage() {
         throw new Error(msg);
       }
 
-      // We expect backend to return the created product (or at least an id)
       const newId = data?.id ?? data?.product?.id;
-      if (newId) {
-        navigate(`/products/${newId}`);
-      } else {
-        // fallback: go back to products list
-        navigate("/products");
-      }
+      if (newId) navigate(`/products/${newId}`);
+      else navigate("/products");
     } catch (err: any) {
       setError(err?.message ?? "Something went wrong.");
     } finally {
@@ -174,13 +223,22 @@ export default function CreateProductPage() {
         {/* Product fields */}
         <div className="grid gap-4 md:grid-cols-2">
           <div className="md:col-span-2">
-            <label className="mb-1 block text-sm font-medium">Product name<span className="text-red-500">*</span></label>
+            <label className="mb-1 block text-sm font-medium">
+              Product name<span className="text-red-500">*</span>
+            </label>
             <input
               value={productName}
-              onChange={(e) => setProductName(e.target.value)}
-              className="w-full rounded-md border px-3 py-2"
+              onChange={(e) => {
+                setProductName(e.target.value);
+                clearFieldError("productName");
+              }}
+              className={inputClass(!!fieldErrors.productName)}
+              aria-invalid={!!fieldErrors.productName}
               placeholder="e.g. Sumo Citrus"
             />
+            {fieldErrors.productName && (
+              <p className="mt-1 text-xs text-red-600">{fieldErrors.productName}</p>
+            )}
           </div>
 
           <div className="md:col-span-2">
@@ -233,7 +291,9 @@ export default function CreateProductPage() {
         {/* Variants */}
         <div className="mt-8">
           <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-lg font-semibold">Variants<span className="text-red-500">*</span></h2>
+            <h2 className="text-lg font-semibold">
+              Variants<span className="text-red-500">*</span>
+            </h2>
             <button
               type="button"
               onClick={addVariant}
@@ -243,69 +303,116 @@ export default function CreateProductPage() {
             </button>
           </div>
 
+          {fieldErrors.variants && (
+            <p className="mb-3 text-sm text-red-600">{fieldErrors.variants}</p>
+          )}
+
           <div className="space-y-4">
-            {variants.map((v, idx) => (
-              <div key={idx} className="rounded-lg border p-4">
-                <div className="mb-3 flex items-center justify-between">
-                  <div className="text-sm font-medium">Variant #{idx + 1}</div>
-                  <button
-                    type="button"
-                    onClick={() => removeVariant(idx)}
-                    disabled={variants.length === 1}
-                    className="text-sm text-muted-foreground hover:text-foreground disabled:opacity-50"
-                    title={variants.length === 1 ? "At least one variant is required" : "Remove"}
-                  >
-                    Remove
-                  </button>
+            {variants.map((v, idx) => {
+              const skuKey = `variants.${idx}.sku`;
+              const nameKey = `variants.${idx}.name`;
+              const priceKey = `variants.${idx}.price`;
+              const invKey = `variants.${idx}.inventory`;
+
+              return (
+                <div key={idx} className="rounded-lg border p-4">
+                  <div className="mb-3 flex items-center justify-between">
+                    <div className="text-sm font-medium">Variant #{idx + 1}</div>
+                    <button
+                      type="button"
+                      onClick={() => removeVariant(idx)}
+                      disabled={variants.length === 1}
+                      className="text-sm text-muted-foreground hover:text-foreground disabled:opacity-50"
+                      title={variants.length === 1 ? "At least one variant is required" : "Remove"}
+                    >
+                      Remove
+                    </button>
+                  </div>
+
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div>
+                      <label className="mb-1 block text-sm font-medium">
+                        SKU<span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        value={v.sku}
+                        onChange={(e) => {
+                          updateVariant(idx, { sku: e.target.value });
+                          clearFieldError(skuKey);
+                        }}
+                        className={inputClass(!!fieldErrors[skuKey])}
+                        aria-invalid={!!fieldErrors[skuKey]}
+                        placeholder="e.g. SUMO-5LB"
+                      />
+                      {fieldErrors[skuKey] && (
+                        <p className="mt-1 text-xs text-red-600">{fieldErrors[skuKey]}</p>
+                      )}
+                    </div>
+
+                    <div>
+                      <label className="mb-1 block text-sm font-medium">
+                        Variant name<span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        value={v.name}
+                        onChange={(e) => {
+                          updateVariant(idx, { name: e.target.value });
+                          clearFieldError(nameKey);
+                        }}
+                        className={inputClass(!!fieldErrors[nameKey])}
+                        aria-invalid={!!fieldErrors[nameKey]}
+                        placeholder="e.g. 5lb box"
+                      />
+                      {fieldErrors[nameKey] && (
+                        <p className="mt-1 text-xs text-red-600">{fieldErrors[nameKey]}</p>
+                      )}
+                    </div>
+
+                    <div>
+                      <label className="mb-1 block text-sm font-medium">
+                        Price (USD)<span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        value={v.price}
+                        onChange={(e) => {
+                          updateVariant(idx, { price: e.target.value });
+                          clearFieldError(priceKey);
+                        }}
+                        className={inputClass(!!fieldErrors[priceKey])}
+                        aria-invalid={!!fieldErrors[priceKey]}
+                        type="number"
+                        min="0"
+                        step="0.01"
+                      />
+                      {fieldErrors[priceKey] && (
+                        <p className="mt-1 text-xs text-red-600">{fieldErrors[priceKey]}</p>
+                      )}
+                    </div>
+
+                    <div>
+                      <label className="mb-1 block text-sm font-medium">
+                        Inventory<span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        value={v.inventory}
+                        onChange={(e) => {
+                          updateVariant(idx, { inventory: e.target.value });
+                          clearFieldError(invKey);
+                        }}
+                        className={inputClass(!!fieldErrors[invKey])}
+                        aria-invalid={!!fieldErrors[invKey]}
+                        type="number"
+                        min="0"
+                        step="1"
+                      />
+                      {fieldErrors[invKey] && (
+                        <p className="mt-1 text-xs text-red-600">{fieldErrors[invKey]}</p>
+                      )}
+                    </div>
+                  </div>
                 </div>
-
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div>
-                    <label className="mb-1 block text-sm font-medium">SKU<span className="text-red-500">*</span></label>
-                    <input
-                      value={v.sku}
-                      onChange={(e) => updateVariant(idx, { sku: e.target.value })}
-                      className="w-full rounded-md border px-3 py-2"
-                      placeholder="e.g. SUMO-5LB"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="mb-1 block text-sm font-medium">Variant name<span className="text-red-500">*</span></label>
-                    <input
-                      value={v.name}
-                      onChange={(e) => updateVariant(idx, { name: e.target.value })}
-                      className="w-full rounded-md border px-3 py-2"
-                      placeholder="e.g. 5lb box"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="mb-1 block text-sm font-medium">Price (USD)<span className="text-red-500">*</span></label>
-                    <input
-                      value={v.price}
-                      onChange={(e) => updateVariant(idx, { price: e.target.value })}
-                      className="w-full rounded-md border px-3 py-2"
-                      type="number"
-                      min="0"
-                      step="0.01"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="mb-1 block text-sm font-medium">Inventory<span className="text-red-500">*</span></label>
-                    <input
-                      value={v.inventory}
-                      onChange={(e) => updateVariant(idx, { inventory: e.target.value })}
-                      className="w-full rounded-md border px-3 py-2"
-                      type="number"
-                      min="0"
-                      step="1"
-                    />
-                  </div>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
 
@@ -318,10 +425,6 @@ export default function CreateProductPage() {
           >
             {isSaving ? "Creating..." : "Create Product"}
           </button>
-
-          {validationError && !error && (
-            <div className="text-sm text-muted-foreground">{validationError}</div>
-          )}
         </div>
       </form>
     </div>

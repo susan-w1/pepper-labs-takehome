@@ -155,26 +155,54 @@ function VariantRow({
   const [price, setPrice] = useState((variant.price_cents / 100).toFixed(2));
   const [inventory, setInventory] = useState(String(variant.inventory_count));
   const [saving, setSaving] = useState(false);
+
+  // General error message (shown under buttons)
   const [error, setError] = useState<string | null>(null);
+
+  // Field-level errors (for red borders)
+  const [fieldErrors, setFieldErrors] = useState<{
+    price?: string;
+    inventory?: string;
+  }>({});
 
   useEffect(() => {
     setPrice((variant.price_cents / 100).toFixed(2));
     setInventory(String(variant.inventory_count));
   }, [variant.price_cents, variant.inventory_count]);
 
+  const resetEditingState = () => {
+    setError(null);
+    setFieldErrors({});
+    setPrice((variant.price_cents / 100).toFixed(2));
+    setInventory(String(variant.inventory_count));
+    setIsEditing(false);
+  };
+
   const save = async () => {
     setError(null);
+
+    const nextFieldErrors: { price?: string; inventory?: string } = {};
 
     const priceNumber = Number(price);
     const inventoryNumber = Number(inventory);
 
-    if (Number.isNaN(priceNumber) || priceNumber < 0) {
-      setError("Price must be a number ≥ 0.");
-      return;
+    // Validate price
+    if (!Number.isFinite(priceNumber) || priceNumber < 0) {
+      nextFieldErrors.price = "Price must be a number ≥ 0.";
     }
 
+    // Validate inventory (integer + >= 0)
     if (!Number.isInteger(inventoryNumber) || inventoryNumber < 0) {
-      setError("Inventory must be an integer ≥ 0.");
+      nextFieldErrors.inventory = "Inventory must be an integer ≥ 0.";
+    }
+
+    // If any errors, show combined message + stop
+    if (Object.keys(nextFieldErrors).length > 0) {
+      setFieldErrors(nextFieldErrors);
+
+      const messages = Object.values(nextFieldErrors);
+      setError(messages.join("\n")); // newline so it becomes multiple lines
+
       return;
     }
 
@@ -195,6 +223,8 @@ function VariantRow({
       if (!res.ok) throw new Error(data?.error || "Failed to update variant.");
 
       onUpdated(data as Variant);
+      setFieldErrors({});
+      setError(null);
       setIsEditing(false);
     } catch (e: any) {
       setError(e?.message ?? "Something went wrong.");
@@ -211,13 +241,21 @@ function VariantRow({
       <td className="p-4 text-right align-middle tabular-nums">
         {isEditing ? (
           <input
-            className="w-24 rounded-md border px-2 py-1 text-right"
+            className={cn(
+              "w-24 rounded-md border px-2 py-1 text-right",
+              fieldErrors.price && "border-red-500 focus-visible:ring-red-500"
+            )}
             type="number"
             min="0"
             step="0.01"
             value={price}
-            onChange={(e) => setPrice(e.target.value)}
+            onChange={(e) => {
+              setPrice(e.target.value);
+              // clear price-specific error as they type
+              setFieldErrors((prev) => ({ ...prev, price: undefined }));
+            }}
             disabled={saving}
+            aria-invalid={!!fieldErrors.price}
           />
         ) : (
           formatPrice(variant.price_cents)
@@ -227,20 +265,26 @@ function VariantRow({
       <td className="p-4 text-right align-middle tabular-nums">
         {isEditing ? (
           <input
-            className="w-20 rounded-md border px-2 py-1 text-right"
+            className={cn(
+              "w-20 rounded-md border px-2 py-1 text-right",
+              fieldErrors.inventory && "border-red-500 focus-visible:ring-red-500"
+            )}
             type="number"
             min="0"
             step="1"
             value={inventory}
-            onChange={(e) => setInventory(e.target.value)}
+            onChange={(e) => {
+              setInventory(e.target.value);
+              // clear inventory-specific error as they type
+              setFieldErrors((prev) => ({ ...prev, inventory: undefined }));
+            }}
             disabled={saving}
+            aria-invalid={!!fieldErrors.inventory}
           />
         ) : (
           <span className={cn(outOfStock && "text-destructive", lowStock && "text-amber-600")}>
             {variant.inventory_count}
-            {outOfStock && (
-              <Package className="ml-1 inline h-3.5 w-3.5 text-destructive/60" />
-            )}
+            {outOfStock && <Package className="ml-1 inline h-3.5 w-3.5 text-destructive/60" />}
           </span>
         )}
       </td>
@@ -258,12 +302,7 @@ function VariantRow({
 
             <button
               className="inline-flex items-center rounded-md border px-2.5 py-1 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-60"
-              onClick={() => {
-                setError(null);
-                setPrice((variant.price_cents / 100).toFixed(2));
-                setInventory(String(variant.inventory_count));
-                setIsEditing(false);
-              }}
+              onClick={resetEditingState}
               disabled={saving}
             >
               Cancel
@@ -274,6 +313,7 @@ function VariantRow({
             className="inline-flex items-center gap-1 rounded-md border px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
             onClick={() => {
               setError(null);
+              setFieldErrors({});
               setIsEditing(true);
             }}
           >
@@ -282,7 +322,11 @@ function VariantRow({
           </button>
         )}
 
-        {error && <div className="mt-2 text-right text-xs text-red-600">{error}</div>}
+        {error && (
+          <div className="mt-2 text-right text-xs text-red-600 whitespace-pre-line">
+            {error}
+          </div>
+        )}
       </td>
     </tr>
   );
