@@ -36,16 +36,59 @@ router.get("/:id", (req, res) => {
  *   "inventory_count": 50
  * }
  */
-router.put("/:id", (_req, res) => {
-  // TODO: Implement variant update
-  // 1. Validate that the variant exists
-  // 2. Validate: price_cents >= 0, inventory_count >= 0, sku is unique (if changed)
-  // 3. Update the variant in the database
-  // 4. Return the updated variant
-  res.status(501).json({
-    error: "Not implemented",
-    hint: "Implement variant update with validation",
-  });
+router.put("/:id", (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) {
+      return res.status(400).json({ error: "Invalid variant id" });
+    }
+
+    // Confirm variant exists
+    const existing = db
+      .prepare("SELECT * FROM variants WHERE id = ?")
+      .get(id) as Record<string, unknown> | undefined;
+
+    if (!existing) {
+      return res.status(404).json({ error: "Variant not found" });
+    }
+
+    const { price_cents, inventory_count } = req.body ?? {};
+
+    // Validate: negative price/inventory not allowed (tests require 400 + JSON)
+    if (price_cents !== undefined) {
+      const p = Number(price_cents);
+      if (!Number.isFinite(p) || p < 0) {
+        return res.status(400).json({ error: "price_cents must be >= 0" });
+      }
+    }
+
+    if (inventory_count !== undefined) {
+      const inv = Number(inventory_count);
+      if (!Number.isFinite(inv) || inv < 0) {
+        return res.status(400).json({ error: "inventory_count must be >= 0" });
+      }
+    }
+
+    // Update only the allowed fields (price + inventory)
+    db.prepare(
+      `
+      UPDATE variants
+      SET price_cents = COALESCE(?, price_cents),
+          inventory_count = COALESCE(?, inventory_count),
+          updated_at = datetime('now')
+      WHERE id = ?
+      `
+    ).run(price_cents ?? null, inventory_count ?? null, id);
+
+    const updated = db
+      .prepare("SELECT * FROM variants WHERE id = ?")
+      .get(id);
+
+    return res.status(200).json(updated);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Unknown error";
+    return res.status(500).json({ error: message });
+  }
 });
 
 /**

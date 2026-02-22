@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { Link } from "react-router-dom";
-import { Plus, Search, X } from "lucide-react";
+import { Plus, Search, X, AlertTriangle } from "lucide-react";
 import { fetchProducts, fetchCategories } from "@/lib/api";
 import type { Product, Category } from "@/types";
 import ProductCard from "@/components/ProductCard";
@@ -11,23 +11,60 @@ export default function ProductsPage() {
   const [search, setSearch] = useState("");
   const [categoryId, setCategoryId] = useState<number | undefined>();
 
+  // Loading + error states (Task 4)
+  const [loadingProducts, setLoadingProducts] = useState(false);
+  const [productsError, setProductsError] = useState<string | null>(null);
+
+  const [loadingCategories, setLoadingCategories] = useState(false);
+  const [categoriesError, setCategoriesError] = useState<string | null>(null);
+
   const hasFilters = Boolean(search || categoryId);
+
+  const loadCategories = useCallback(async () => {
+    setLoadingCategories(true);
+    setCategoriesError(null);
+    try {
+      const res = await fetchCategories();
+      if (!res.ok) throw new Error(`Failed to load categories (${res.status})`);
+      const data = await res.json();
+      setCategories(Array.isArray(data) ? data : []);
+    } catch (e: any) {
+      setCategories([]);
+      setCategoriesError(e?.message ?? "Couldn’t load categories.");
+    } finally {
+      setLoadingCategories(false);
+    }
+  }, []);
+
+  const loadProducts = useCallback(async () => {
+    setLoadingProducts(true);
+    setProductsError(null);
+
+    try {
+      const res = await fetchProducts({
+        search: search || undefined,
+        category_id: categoryId,
+      });
+      if (!res.ok) throw new Error(`Failed to load products (${res.status})`);
+      const data = await res.json();
+      setProducts(Array.isArray(data) ? data : []);
+    } catch (e: any) {
+      setProducts([]);
+      setProductsError(e?.message ?? "Couldn’t load products. Please try again.");
+    } finally {
+      setLoadingProducts(false);
+    }
+  }, [search, categoryId]);
 
   // Fetch categories on mount
   useEffect(() => {
-    fetchCategories()
-      .then((r) => r.json())
-      .then(setCategories)
-      .catch(() => {});
-  }, []);
+    loadCategories();
+  }, [loadCategories]);
 
   // Fetch products when filters change
   useEffect(() => {
-    fetchProducts({ search: search || undefined, category_id: categoryId })
-      .then((r) => r.json())
-      .then(setProducts)
-      .catch(() => {});
-  }, [search, categoryId]);
+    loadProducts();
+  }, [loadProducts]);
 
   const clearFilters = () => {
     setSearch("");
@@ -62,6 +99,7 @@ export default function ProductsPage() {
               setCategoryId(e.target.value ? Number(e.target.value) : undefined)
             }
             className="flex h-10 w-full items-center rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            disabled={loadingCategories && categories.length === 0}
           >
             <option value="">All categories</option>
             {categories.map((c) => (
@@ -70,6 +108,12 @@ export default function ProductsPage() {
               </option>
             ))}
           </select>
+
+          {/* Category loading / error helper text */}
+          {loadingCategories && (
+            <p className="mt-1 text-xs text-muted-foreground">Loading categories…</p>
+          )}
+
         </div>
 
         {/* Clear + New Product */}
@@ -94,13 +138,35 @@ export default function ProductsPage() {
         </div>
       </div>
 
+      {/* Products error state */}
+      {productsError && !loadingProducts && (
+  <div className="mb-6 rounded-lg border bg-card p-8 shadow-card">
+    <div className="flex flex-col items-center text-center">
+      <AlertTriangle className="h-6 w-6 text-destructive" />
+      <p className="mt-3 text-base font-semibold">Couldn’t load products</p>
+      <p className="mt-1 text-sm text-muted-foreground">{productsError}</p>
+
+      <button
+        onClick={loadProducts}
+        className="mt-4 inline-flex h-9 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground"
+      >
+        Retry
+      </button>
+    </div>
+  </div>
+)}
+
       {/* Result count */}
       <p className="mb-4 text-sm text-muted-foreground">
-        {products.length} result{products.length !== 1 ? "s" : ""} found
+        {loadingProducts ? "Loading…" : `${products.length} result${products.length !== 1 ? "s" : ""} found`}
       </p>
 
-      {/* Product grid — 5 columns on xl like original CatalogGrid */}
-      {products.length === 0 ? (
+      {/* Loading state */}
+      {loadingProducts ? (
+        <div className="flex items-center justify-center py-20">
+          <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+        </div>
+      ) : products.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-20 text-muted-foreground">
           <p className="text-lg font-medium">No products found</p>
           <p className="mt-1 text-sm">Try adjusting your search or filters.</p>

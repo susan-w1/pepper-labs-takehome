@@ -34,6 +34,8 @@ router.get("/", (req, res) => {
 
     const conditions: string[] = [];
     const params: unknown[] = [];
+    
+    conditions.push("p.deleted_at IS NULL");
 
     if (search) {
       conditions.push("(p.name LIKE ? OR p.description LIKE ?)");
