@@ -162,22 +162,18 @@ export default function ProductsPage() {
       </p>
 
       {/* Loading state */}
-      {loadingProducts ? (
-        <div className="flex items-center justify-center py-20">
-          <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
-        </div>
-      ) : products.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-20 text-muted-foreground">
-          <p className="text-lg font-medium">No products found</p>
-          <p className="mt-1 text-sm">Try adjusting your search or filters.</p>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-          {products.map((p) => (
-            <ProductCard key={p.id} product={p} />
-          ))}
-        </div>
-      )}
+      {productsError ? null : products.length === 0 ? (
+  <div className="flex flex-col items-center justify-center py-20 text-muted-foreground">
+    <p className="text-lg font-medium">No products found</p>
+    <p className="mt-1 text-sm">Try adjusting your search or filters.</p>
+  </div>
+) : (
+  <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+    {products.map((p) => (
+      <ProductCard key={p.id} product={p} />
+    ))}
+  </div>
+)}
     </div>
   );
 }
