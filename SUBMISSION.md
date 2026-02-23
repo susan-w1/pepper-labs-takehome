@@ -42,7 +42,7 @@ Decisions/Tradeoffs
 
 ### Task 3
 Approach
-I added a condition to the GET /api/products query to exclude soft-deleted products. On the frontend, once a product is deleted, the product disappears from the products list. 
+I added a condition to the GET /api/products query to exclude soft-deleted products. On the frontend, once a product is deleted, the product disappears from the products list (and stays removed once the page is refreshed). 
 
 Decisions/Tradeoffs
 1. I added the filter in the query builder so that soft-deleted products are always excluded, even when filters/search are used.
@@ -56,39 +56,40 @@ Decisions/Tradeoffs
 
 ### Task 5
 Approach
-Across the Products page, Product Details page, Edit functions, etc., I ensured that validation exists in both the frontend and the backend. In the frontend, the appropriate parameters would be communicated to the user via a red highlight around the required fields or an error message upon attempted submission. In the backend, I added checks for creating a product and updating a variant so that if a rule was not followed (i.e. Inventory < 0), the server would return JSON 400/404 errors. 
+Across the Products page, Product Details page, Edit function, etc., I ensured that validation exists in both the frontend and the backend. On the frontend, the appropriate parameters for every field is communicated to the user via a red highlight around the required fields or an error message upon attempted incomplete submission. In the backend, I added checks for creating a product and updating a variant so that if a rule was not followed (i.e. Inventory < 0), the server would return JSON 400/404 errors. 
 
 Decisions/Tradeoffs
-1. I altered the code so that multiple errors could be collected and the error message would acknowledge multiple errors. 
+1. I altered the code so that multiple errors (i.e. Inventory < 0 AND Price < 0) could be collected and the error message would acknowledge multiple errors at once.
 
 ---
 
 ## What I'd improve with more time
 
 Create Product Page:
-1. Give the user the ability to create a new status and/or category on this page
-2. Add "Uncategorized" as a category in the dropdown list. Subsequently, add "Uncategorized" as a category in the Categories page so users can monitor which products do not belong to a category
-3. Instead of a dropdown menu for the Status field, show "active" and "draft in the same UI as they exist on the Products page (with yellow and green highlight around the text) to remind the user what the Status field is
-4. Once a user inputs a Price and hits enter/clicks elsewhere on the screen, change the value to a dollar value with a $
-5. Add a section to add photos
-6. Change placement of the drop down arrow to be closer to the text ("active" and "none")
-7. Add character limits for Product Name, Description, SKU, Variant Name
+1. Give the user the ability to create a new status and/or category on this page.
+2. Add "Uncategorized" as a category in the dropdown list. Subsequently, add "Uncategorized" as a category in the Categories page so users can monitor which products do not belong to a category.
+3. Instead of a dropdown menu for the Status field, show "active" and "draft" in the same UI as they exist on the Products page (with yellow and green highlight around the text) to remind and familiarize the user with what the Status field is.
+4. Once a user inputs a Price and hits enter/clicks elsewhere on the screen, change the value to a dollar value with a $. 
+5. Add a section to allow the user to upload photos of the product. 
+6. Change placement of the dropdown arrows to be closer to the text ("active" and "none").
+7. Add character limits for Product Name, Description, SKU, Variant Name. 
 
 Other:
-1. Create a page to view all deleted products
-2. Create an "Undo Delete" button that appears on the Products page (or wherever the redirected page is) once a product has been deleted
-3. When the error screen is shown and the Retry button is clicked, replace the "Retry" text with a loading spinner to show that the data is attempting to be fetched
-4. When there is an error in loading the Products page, do not give the user the ability to click the "Add New Product" button (show different error message)
-5. Allow the user to search by SKU
-6. If the user is creating a new product and they try to navigate to a different page, show a warning that progress will be lost if there are unsaved changes
+1. Create a page to view all (recently) deleted products.
+2. Create an "Undo Delete" button that appears on the Products page (or wherever the redirected page is) once a product has been deleted.
+3. When the error screen is shown and the user clicks the Retry button, replace the "Retry" text with a loading spinner to show that the data is attempting to be fetched.
+4. When there is an error in loading the Products page, do not give the user the ability to click the "Add New Product" button (show a different error message).
+5. Allow the user to search by SKU.
+6. If the user is creating a new product and they try to navigate to a different page before hitting Save, flash a warning message to the user informing them that progress will be lost if there are unsaved changes.
+7. Give the user the ability to edit fields beyond just Price and Inventory.
 
 Backend recommendations from ChatGPT:
-1. Add a small shared API error handling wrapper in frontend/src/lib to standardize error parsing and messaging
-2. Add a reusable FormField component (label + input + error + styling) to reduce repeated code for validation UI
-3. Add a consistent backend error format across all routes (some routes still use plain text in older handlers)
+1. Add a small shared API error handling wrapper in frontend/src/lib to standardize error parsing and messaging.
+2. Add a reusable FormField component (label + input + error + styling) to reduce repeated code for validation UI.
+3. Add a consistent backend error format across all routes (some routes still use plain text in older handlers).
 
 ---
 
 ## Anything else?
 
-Initially, I began the project using a version of Node (v23.11.0) that is susceptible to weird dev/server behavior. This caused many issues with the files I created (corrupted files) and delayed the connection to the servers which stalled my completion of the project. As a result, I switched to Node 20, reducing the random tooling failures I was experiencing. 
+Initially, I began working on the project using a version of Node (v23.11.0) that is susceptible to weird dev/server behavior. This caused many issues with the files I created (corrupted files) and meaningfully delayed the connection to the servers, stalling my completion of the project. As a result, I switched to Node 20, reducing the random tooling failures I was experiencing.
