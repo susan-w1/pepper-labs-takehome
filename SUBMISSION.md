@@ -82,6 +82,7 @@ Other:
 5. Allow the user to search by SKU.
 6. If the user is creating a new product and they try to navigate to a different page before hitting Save, flash a warning message to the user informing them that progress will be lost if there are unsaved changes.
 7. Give the user the ability to edit fields beyond just Price and Inventory.
+8. Adopt the same UI as rest of website when confirming with user if they want to delete the product.
 
 Backend recommendations from ChatGPT:
 1. Add a small shared API error handling wrapper in frontend/src/lib to standardize error parsing and messaging.
